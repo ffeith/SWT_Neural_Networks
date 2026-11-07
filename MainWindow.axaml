@@ -11,8 +11,7 @@
         Width="1350"
         Height="800"
         MinWidth="1150"
-        MinHeight="700"
-        Closing="MainWindow_Closing">
+        MinHeight="700">
 
     <Grid RowDefinitions="Auto,*,Auto" Margin="10">
 
