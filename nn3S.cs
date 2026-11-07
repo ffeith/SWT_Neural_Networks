@@ -46,37 +46,35 @@ namespace NeuralNetworks_1
             wih = new double[inodes, hnodes];                   //wih weights-input-hidden
             who = new double[hnodes, onodes];                   //who weights-hidden-output    
 
-            wih[0, 0] = 0.9; //spalte, reihe
-            wih[1, 0] = 0.3;
-            wih[2, 0] = 0.4;
-            wih[0, 1] = 0.2;
-            wih[1, 1] = 0.8;
-            wih[2, 1] = 0.2;
-            wih[0, 2] = 0.1;
-            wih[1, 2] = 0.5;
-            wih[2, 2] = 0.6;
+            Random random = new Random();
 
-            who[0, 0] = 0.3;
-            who[1, 0] = 0.7;
-            who[2, 0] = 0.5;
-            who[0, 1] = 0.6;
-            who[1, 1] = 0.5;
-            who[2, 1] = 0.2;
-            who[0, 2] = 0.8;
-            who[1, 2] = 0.1;
-            who[2, 2] = 0.9;
+            for (int i = 0; i < inodes; i++)
+            {
+                for (int h = 0; h < hnodes; h++)
+                {
+                    wih[i, h] = random.NextDouble() * 2.0 - 1.0;
+                }
+            }
+
+            for (int h = 0; h < hnodes; h++)
+            {
+                for (int o = 0; o < onodes; o++)
+                {
+                    who[h, o] = random.NextDouble() * 2.0 - 1.0;
+                }
+            }
         }
 
         public void queryNN(double[] inputs)
         {
             hidden_inputs = new double[hnodes];
-            hidden_inputs = nnMathO.multiplyMatrixByVector(wih, inodes, inputs);
+            hidden_inputs = nnMathO.multiplyMatrixByVector(wih, inputs);
            
             hidden_outputs = new double[hnodes];
             hidden_outputs = nnMathO.activationFunction(hidden_inputs);           
 
             final_inputs = new double[onodes];
-            final_inputs = nnMathO.multiplyMatrixByVector(who, hnodes, hidden_outputs);
+            final_inputs = nnMathO.multiplyMatrixByVector(who, hidden_outputs);
 
             final_outputs = new double[onodes];
             final_outputs = nnMathO.activationFunction(final_inputs);
@@ -94,26 +92,26 @@ namespace NeuralNetworks_1
             for (int i = 0; i < onodes; i++)
                 output_errors[i] = targets[i] - final_outputs[i];
 
-            hidden_errors = nnMathO.multiplyMatrixByVector(nnMathO.transpose(who), who.GetLength(1), output_errors);
+            hidden_errors = nnMathO.multiplyMatrixByVector(nnMathO.transpose(who), output_errors);
 
-            output_deltas = new double[onodes];
-
+            //Deltas = Fehler * Ableitung der Sigmoidfunktion
             for (int i = 0; i < onodes; i++)
-                output_deltas[i] = output_errors[i] * final_outputs[i] * (1.0 - final_outputs[i]);
+                output_deltas[i] = output_errors[i] * final_outputs[i] * (1.0 - final_outputs[i]);     
 
-            // Update the weights between hidden and output layers
+            //Gewichtsänderungen = Lernrate * Deltas * Eingaben
             double[,] weightChangesHO = nnMathO.fullMatrixMult(hidden_outputs, output_deltas);
             weightChangesHO = nnMathO.matrixScale(weightChangesHO, learningRate);
 
             who = nnMathO.matrixSum(who, weightChangesHO);
 
-
+            //Deltas = Fehler * Ableitung der Sigmoidfunktion
             for (int i = 0; i < hnodes; i++)
                 hidden_deltas[i] = hidden_errors[i] * hidden_outputs[i] * (1.0 - hidden_outputs[i]);
 
+            //Gewichtsänderungen = Lernrate * Deltas * Eingaben
             double[,] weightChangesIH = nnMathO.fullMatrixMult(inputs, hidden_deltas);
             weightChangesIH = nnMathO.matrixScale(weightChangesIH, learningRate);
-            
+
             wih = nnMathO.matrixSum(wih, weightChangesIH);
         }
     }

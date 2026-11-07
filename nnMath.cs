@@ -12,12 +12,12 @@ using Avalonia.Utilities;
 namespace NeuralNetworks_1;
 class nnMath
 {
-    public double[] multiplyMatrixByVector(double[,] matrix1, int matrix1width, double[] matrix2)
+    public double[] multiplyMatrixByVector(double[,] matrix1, double[] line_vector)
     {
-        double[] result = new double[matrix2.Length];
+        double[] result = new double[matrix1.GetLength(1)];
         for (int i = 0; i < result.Length; i++)
-            for (int j = 0; j < matrix2.Length; j++)
-                result[i] += matrix1[j, i] * matrix2[j];
+            for (int j = 0; j < line_vector.Length; j++)
+                result[i] += matrix1[j, i] * line_vector[j];
         return result;
     }
     public double[] activationFunction(double[] inputs)
