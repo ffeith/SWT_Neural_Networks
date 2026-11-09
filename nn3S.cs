@@ -86,33 +86,61 @@ namespace NeuralNetworks_1
 
             output_errors = new double[onodes];
             hidden_errors = new double[hnodes];
+
             double[] output_deltas = new double[onodes];
             double[] hidden_deltas = new double[hnodes];
 
             for (int i = 0; i < onodes; i++)
                 output_errors[i] = targets[i] - final_outputs[i];
 
-            hidden_errors = nnMathO.multiplyMatrixByVector(nnMathO.transpose(who), output_errors);
+            hidden_errors = nnMathO.multiplyMatrixByVector(
+                nnMathO.transpose(who), output_errors);
 
-            //Deltas = Fehler * Ableitung der Sigmoidfunktion
+            // Deltas = Fehler * Ableitung der Sigmoidfunktion
             for (int i = 0; i < onodes; i++)
-                output_deltas[i] = output_errors[i] * final_outputs[i] * (1.0 - final_outputs[i]);     
+                output_deltas[i] =
+                    output_errors[i] * final_outputs[i] * (1.0 - final_outputs[i]);
 
-            //Gewichtsänderungen = Lernrate * Deltas * Eingaben
-            double[,] weightChangesHO = nnMathO.fullMatrixMult(hidden_outputs, output_deltas);
-            weightChangesHO = nnMathO.matrixScale(weightChangesHO, learningRate);
-
-            who = nnMathO.matrixSum(who, weightChangesHO);
-
-            //Deltas = Fehler * Ableitung der Sigmoidfunktion
+            // Deltas = Fehler * Ableitung der Sigmoidfunktion
             for (int i = 0; i < hnodes; i++)
-                hidden_deltas[i] = hidden_errors[i] * hidden_outputs[i] * (1.0 - hidden_outputs[i]);
+                hidden_deltas[i] =
+                    hidden_errors[i] * hidden_outputs[i] * (1.0 - hidden_outputs[i]);
 
-            //Gewichtsänderungen = Lernrate * Deltas * Eingaben
-            double[,] weightChangesIH = nnMathO.fullMatrixMult(inputs, hidden_deltas);
-            weightChangesIH = nnMathO.matrixScale(weightChangesIH, learningRate);
+            // Gewichtsmatrizen aktualisieren
+            updateWeights(inputs, output_deltas, hidden_deltas);
+        }
+        public void setWHOMatrix(double[,] matrix)
+        {
+            who = matrix;
+        }
 
-            wih = nnMathO.matrixSum(wih, weightChangesIH);
+        public void setWIHMatrix(double[,] matrix)
+        {
+            wih = matrix;
+        }
+        public void updateWeights(
+        double[] inputs,
+        double[] output_deltas,
+        double[] hidden_deltas)
+        {
+            // Gewichtsänderungen für Hidden-Output
+            double[,] weightChangesHO =
+                nnMathO.fullMatrixMult(hidden_outputs, output_deltas);
+
+            weightChangesHO =
+                nnMathO.matrixScale(weightChangesHO, learningRate);
+
+            setWHOMatrix(nnMathO.matrixSum(who, weightChangesHO));
+
+
+            // Gewichtsänderungen für Input-Hidden
+            double[,] weightChangesIH =
+                nnMathO.fullMatrixMult(inputs, hidden_deltas);
+
+            weightChangesIH =
+                nnMathO.matrixScale(weightChangesIH, learningRate);
+
+            setWIHMatrix(nnMathO.matrixSum(wih, weightChangesIH));
         }
     }
 }

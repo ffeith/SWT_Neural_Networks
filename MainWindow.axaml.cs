@@ -1,9 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using System.Globalization;
+using Avalonia;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using System.Runtime.InteropServices;
 
 //Zum Auswählen der Datei
 using Avalonia.Platform.Storage;
@@ -21,7 +26,7 @@ public partial class MainWindow : Window
     int trainCount = 0;
     double learningRate = 0.1;
     bool trainOK = false;
-
+    List<double> lossValues = new List<double>();
     double[] inputs = Array.Empty<double>();
     double[] targets = Array.Empty<double>();
 
@@ -47,6 +52,78 @@ public partial class MainWindow : Window
         learningRateTextBox.AddHandler(TextInputEvent, learningRateTextBox_PreviewTextInput, RoutingStrategies.Tunnel);
         epochBox.AddHandler(TextInputEvent, epochenBox_PreviewTextInput, RoutingStrategies.Tunnel);
         performanceBox.AddHandler(TextInputEvent, performanceBox_PreviewTextInput, RoutingStrategies.Tunnel);
+
+        //Automatisches Speichern der Gewichtsmatrizen beim Schließen des Fensters
+        bool closeAfterSaving = false;
+        this.Closing += async (sender, e) =>
+        {
+            // Beim zweiten Schließvorgang normales Schließen erlauben
+            if (closeAfterSaving || nn3SO == null || !trainOK)
+                return;
+
+            // Schließen zunächst verhindern
+            e.Cancel = true;
+
+            // Speicherort auswählen, falls noch keiner vorhanden ist
+            if (weightFile == null)
+            {
+                weightFile = await StorageProvider.SaveFilePickerAsync(
+                    new FilePickerSaveOptions
+                    {
+                        Title = "Save trained weights",
+                        SuggestedFileName = "mnist_weights.txt",
+                        DefaultExtension = "txt"
+                    });
+            }
+
+            if (weightFile == null)
+            {
+                statusTextBlock.Text = "Saving cancelled.";
+                return;
+            }
+
+            using (Stream stream = await weightFile.OpenWriteAsync())
+            using (StreamWriter writer = new StreamWriter(stream))
+            {
+                // Netzwerkparameter speichern
+                writer.WriteLine(
+                    $"{inodes},{hnodes},{onodes},{learningRate.ToString(CultureInfo.InvariantCulture)}");
+
+                // WIH speichern
+                for (int i = 0; i < inodes; i++)
+                {
+                    for (int h = 0; h < hnodes; h++)
+                    {
+                        if (h > 0)
+                            writer.Write(",");
+
+                        writer.Write(nn3SO.WIH[i, h].ToString(CultureInfo.InvariantCulture));
+                    }
+
+                    writer.WriteLine();
+                }
+
+                // WHO speichern
+                for (int h = 0; h < hnodes; h++)
+                {
+                    for (int o = 0; o < onodes; o++)
+                    {
+                        if (o > 0)
+                            writer.Write(",");
+
+                        writer.Write(nn3SO.WHO[h, o].ToString(CultureInfo.InvariantCulture));
+                    }
+
+                    writer.WriteLine();
+                }
+            }
+
+            weightFileTextBox.Text = weightFile.Name;
+
+            // Speichern abgeschlossen
+            closeAfterSaving = true;
+            Close();
+        };
     }
 
     private void inputTextBox_PreviewTextInput(object? sender, TextInputEventArgs e)
@@ -95,13 +172,17 @@ public partial class MainWindow : Window
         trainCount = 0;
         trainOK = false;
 
+        // Alte Verbindung zu einer Gewichtsdatei zurücksetzen
+        weightFile = null;
+        weightFileTextBox.Text = "";
+
         // GUI aktualisieren
         rows.Clear();
         performanceBox.Text = "0 %";
         recognizedNumberTextBox.Text = "";
 
         trainButton.IsEnabled = true;
-        queryButton.IsEnabled = true;
+        queryButton.IsEnabled = false;
 
         statusTextBlock.Text =
             $"Network {inodes}-{hnodes}-{onodes} created.";
@@ -133,7 +214,7 @@ public partial class MainWindow : Window
             if (string.IsNullOrWhiteSpace(line))
                 continue;
 
-            // Testdaten einlesen
+            // Testdaten einlesen und Bild anzeigen
             readInputs(line);
 
             // Netzwerk abfragen
@@ -147,8 +228,11 @@ public partial class MainWindow : Window
 
             for (int i = 1; i < onodes; i++)
             {
-                if (nn3SO.Final_outputs[i] > nn3SO.Final_outputs[predictedNumber])
+                if (nn3SO.Final_outputs[i] >
+                    nn3SO.Final_outputs[predictedNumber])
+                {
                     predictedNumber = i;
+                }
             }
 
             // Ergebnisse vergleichen
@@ -157,12 +241,52 @@ public partial class MainWindow : Window
 
             totalCount++;
 
-            // Performance berechnen
+            // Performance aktualisieren
             double performance =
                 (double)correctCount / totalCount * 100.0;
 
             performanceBox.Text = $"{performance:0.00} %";
             recognizedNumberTextBox.Text = predictedNumber.ToString();
+
+            // MessageBox nur bei aktivierter Checkbox
+            if (showImagesCheckBox.IsChecked == true)
+            {
+                displayResults(false);
+
+                var nextButton = new Button
+                {
+                    Content = "Next",
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
+                };
+
+                var messageWindow = new Window
+                {
+                    Title = "Query",
+                    Width = 320,
+                    Height = 170,
+                    CanResize = false,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+
+                    Content = new StackPanel
+                    {
+                        Margin = new Avalonia.Thickness(15),
+                        Spacing = 12,
+                        Children =
+                        {
+                            new TextBlock
+                            {
+                                Text = $"Actual digit: {actualNumber}\nRecognized digit: {predictedNumber}\nPerformance: {performance:0.00} %",
+                                TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                            },
+                            nextButton
+                        }
+                    }
+                };
+
+                nextButton.Click += (_, _) => messageWindow.Close();
+
+                await messageWindow.ShowDialog(this);
+            }
 
             if (totalCount % 10 == 0)
                 await Task.Yield();
@@ -197,6 +321,8 @@ public partial class MainWindow : Window
 
         trainCount = 0;
         trainOK = false;
+        // Verlustwerte zurücksetzen
+        lossValues.Clear();
 
         // Alle Epochen durchlaufen
         for (int epoch = 0; epoch < epoches; epoch++)
@@ -206,24 +332,119 @@ public partial class MainWindow : Window
 
             string? line;
 
-            // Trainingsdatei zeilenweise einlesen
             while ((line = await reader.ReadLineAsync()) != null)
             {
                 if (string.IsNullOrWhiteSpace(line))
                     continue;
 
+                // Eingabedaten einlesen und Bild anzeigen
                 readInputs(line);
 
+                // Netzwerk trainieren
                 nn3SO.trainNN(inputs, targets);
 
+                // Verlust berechnen und speichern
+                double loss = 0;
+                for (int i = 0; i < onodes; i++)
+                {
+                    // Verlust = Summe der quadrierten Fehler
+                    loss += Math.Pow(nn3SO.Output_errors[i], 2);
+                }
+                lossValues.Add(loss);
+
                 trainCount++;
+
+                // Erkannte Ziffer bestimmen
+                int predictedNumber = 0;
+
+                for (int i = 1; i < onodes; i++)
+                {
+                    if (nn3SO.Final_outputs[i] >
+                        nn3SO.Final_outputs[predictedNumber])
+                    {
+                        predictedNumber = i;
+                    }
+                }
+
+                recognizedNumberTextBox.Text = predictedNumber.ToString();
+
+                // MessageBox nur bei aktivierter Checkbox
+                if (showImagesCheckBox.IsChecked == true)
+                {
+                    displayResults(true);
+
+                    var nextButton = new Button
+                    {
+                        Content = "Next",
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
+                    };
+
+                    var messageWindow = new Window
+                    {
+                        Title = "Training",
+                        Width = 320,
+                        Height = 150,
+                        CanResize = false,
+                        WindowStartupLocation = WindowStartupLocation.CenterOwner,
+
+                        Content = new StackPanel
+                        {
+                            Margin = new Avalonia.Thickness(15),
+                            Spacing = 12,
+                            Children =
+                            {
+                                new TextBlock
+                                {
+                                    Text = $"Training image {trainCount}. Click Next to continue.",
+                                    TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                                },
+                                nextButton
+                            }
+                        }
+                    };
+
+                    nextButton.Click += (_, _) => messageWindow.Close();
+
+                    await messageWindow.ShowDialog(this);
+                }
 
                 if (trainCount % 10 == 0)
                     await Task.Yield();
             }
         }
 
+        // Loss-Werte speichern in eine CSV-Datei
+        var lossFile = await StorageProvider.SaveFilePickerAsync(
+            new FilePickerSaveOptions
+            {
+                Title = "Save Loss Values",
+                SuggestedFileName = $"loss_{epoches}epochs.csv",
+                DefaultExtension = "csv",
+                FileTypeChoices = new[]
+                {
+                    new FilePickerFileType("CSV Files")
+                    {
+                        Patterns = new[] { "*.csv" }
+                    }
+                }
+            });
+
+        if (lossFile != null)
+        {
+            using Stream stream = await lossFile.OpenWriteAsync();
+            using StreamWriter writer = new StreamWriter(stream);
+
+            writer.WriteLine("TrainingImage,Loss");
+
+            for (int i = 0; i < lossValues.Count; i++)
+            {
+                writer.WriteLine(
+                    $"{i + 1},{lossValues[i].ToString("R", CultureInfo.InvariantCulture)}");
+            }
+        }
+
         trainOK = true;
+        queryButton.IsEnabled = true;
 
         displayResults(true);
 
@@ -514,9 +735,56 @@ public partial class MainWindow : Window
                 CultureInfo.InvariantCulture) / 255.0;
         }
 
-        // Zielvektor erstellen (One-Hot-Encoding)
+        // Zielvektor erstellen
         targets = new double[onodes];
         targets[label] = 1.0;
+
+        // Bild nur anzeigen, wenn Checkbox aktiviert ist
+        if (showImagesCheckBox.IsChecked != true)
+            return;
+
+        // Bitmap mit 28 x 28 Pixeln erstellen
+        WriteableBitmap bitmap = new WriteableBitmap(
+            new PixelSize(28, 28),
+            new Vector(96, 96),
+            PixelFormat.Bgra8888,
+            AlphaFormat.Opaque);
+
+        using (var framebuffer = bitmap.Lock())
+        {
+            byte[] pixelBuffer = new byte[framebuffer.RowBytes * 28];
+
+            for (int y = 0; y < 28; y++)
+            {
+                for (int x = 0; x < 28; x++)
+                {
+                    int pixelIndex = y * 28 + x;
+
+                    byte grey = (byte)Math.Round(
+                        inputs[pixelIndex] * 255.0);
+
+                    int index = y * framebuffer.RowBytes + x * 4;
+
+                    pixelBuffer[index] = grey;
+                    pixelBuffer[index + 1] = grey;
+                    pixelBuffer[index + 2] = grey;
+                    pixelBuffer[index + 3] = 255;
+                }
+            }
+
+            Marshal.Copy(
+                pixelBuffer,
+                0,
+                framebuffer.Address,
+                pixelBuffer.Length);
+        }
+
+        // Bild in der GUI anzeigen
+        WriteableBitmap? oldBitmap = digitImage.Source as WriteableBitmap;
+
+        digitImage.Source = bitmap;
+
+        oldBitmap?.Dispose();
     }
     private void epochenBox_PreviewTextInput(object? sender, TextInputEventArgs e)
     {
