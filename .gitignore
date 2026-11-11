@@ -483,3 +483,9 @@ $RECYCLE.BIN/
 
 # Local datasets and experiment files
 /Data/
+
+# Lokale Trainingsdatensätze nicht versionieren
+/Abgabe/Trainingssätze/
+
+# Große Excel-Arbeitsmappen mit Zwischenständen nicht versionieren
+/Abgabe/Diagramme/Loss_Diagramme/*.xlsx
